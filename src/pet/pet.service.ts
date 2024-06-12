@@ -1,91 +1,78 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreatePetDto } from './dto/create-pet.dto';
 import { UpdatePetDto } from './dto/update-pet.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Pet } from './entities/pet.entity';
 import { Repository } from 'typeorm';
+import { Owner } from 'src/owner/entities/owner.entity';
 
 @Injectable()
 export class PetService {
   constructor(
     @InjectRepository(Pet)
-    private readonly petRepository: Repository<Pet>,
+    private petRepository: Repository<Pet>,
+
+    @InjectRepository(Owner)
+    private ownerRepository: Repository<Owner>,
   ) {}
 
-  async create(createPetDto: CreatePetDto) {
-    try {
-      const pet = this.petRepository.create(createPetDto);
-      return await this.petRepository.save(pet);
-    } catch (error) {
-      throw new HttpException(
-        'No se pudo crear la mascota',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+  async create(createPetDto: CreatePetDto): Promise<Pet> {
+    const owner = await this.ownerRepository.findOne({
+      where: { id: createPetDto.owner_id },
+    });
+    if (!owner) {
+      throw new NotFoundException(
+        `No se encontró dueño con ID ${createPetDto.owner_id}`,
       );
     }
+    const pet = this.petRepository.create({
+      name: createPetDto.name,
+      owner,
+    });
+    return await this.petRepository.save(pet);
   }
 
-  async findAll() {
-    try {
-      return await this.petRepository.find();
-    } catch (error) {
-      throw new HttpException(
-        'No se pudo encontrar las mascotas',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+  async findAll(): Promise<Pet[]> {
+    return await this.petRepository.find();
+  }
+
+  async findOne(id: number): Promise<Pet> {
+    const pet = await this.petRepository.findOne({
+      where: { id },
+    });
+    if (!pet) {
+      throw new NotFoundException(`No se encontró mascota con ID ${id}`);
     }
+    return pet;
   }
 
-  async findOne(id: number) {
-    try {
-      const pet = await this.petRepository.findOneBy({ id });
-      if (pet == null) {
-        throw new HttpException(
-          'No se pudo encontrar una mascota con ese id',
-          HttpStatus.NOT_FOUND,
+  async update(id: number, updatePetDto: UpdatePetDto): Promise<Pet> {
+    const pet = await this.petRepository.findOne({ where: { id } });
+    if (!pet) {
+      throw new NotFoundException(`No se encontró mascota con ID ${id}`);
+    }
+    if (updatePetDto.owner_id) {
+      const owner = await this.ownerRepository.findOne({
+        where: { id: updatePetDto.owner_id },
+      });
+      if (!owner) {
+        throw new NotFoundException(
+          `No se encontró dueño con ID ${updatePetDto.owner_id}`,
         );
       }
-      return pet;
-    } catch (error) {
-      throw new HttpException(
-        'No se pudo encontrar la mascota',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      pet.owner = owner;
     }
+    if (updatePetDto.name) {
+      pet.name = updatePetDto.name;
+    }
+    return await this.petRepository.save(pet);
   }
 
-  async update(id: number, updatePetDto: UpdatePetDto) {
-    try {
-      const updatedPet = await this.petRepository.update(id, updatePetDto);
-      console.log(updatedPet);
-      if (updatedPet.affected === 0) {
-        throw new HttpException(
-          'No se pudo encontrar una mascota con ese id',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-      return updatedPet;
-    } catch (error) {
-      throw new HttpException(
-        'No se pudo actualizar la mascota',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+  async remove(id: number): Promise<void> {
+    const pet = await this.petRepository.findOne({ where: { id } });
+    if (!pet) {
+      throw new NotFoundException(`No se encontró mascota con ID ${id}`);
     }
-  }
-
-  async remove(id: number) {
-    try {
-      const deletedPet = await this.petRepository.delete(id);
-      if (deletedPet.affected === 0) {
-        throw new HttpException(
-          'No se pudo encontrar una mascota con ese id',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-    } catch (error) {
-      throw new HttpException(
-        'No se pudo actualizar la mascota',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    await this.petRepository.remove(pet);
   }
 }
